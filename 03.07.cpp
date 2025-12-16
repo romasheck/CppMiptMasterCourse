@@ -98,13 +98,13 @@ public:
 
     void push_back(int value)
     {
-        grant_capacity_for_one_more();
+        increase_cap();
         m_array[m_size++] = value;
     }
 
 private:
 
-    void grant_capacity_for_one_more()
+    void increase_cap()
     {
         if (m_size < m_capacity)
             return;

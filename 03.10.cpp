@@ -25,7 +25,7 @@ class Rational
 {
 public :
 
-	/* explicit */ Rational(int num = 0, int den = 1) : m_num(num), m_den(den)
+	/* explicit ?????*/ Rational(int num = 0, int den = 1) : m_num(num), m_den(den)
 	{
 		reduce();
 	}

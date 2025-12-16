@@ -21,7 +21,7 @@ public :
         std::cout << "Entity_v1::~Entity_v1\n";
     }
 
-    virtual void test(int & m_value) const = 0;
+    virtual void test(int & value) const = 0;
 };
 
 class Entity_v2
@@ -32,7 +32,7 @@ public :
         std::cout << "Entity_v2::~Entity_v2\n";
     }
 
-    virtual void test(int & m_value) const = 0;
+    virtual void test(int & value) const = 0;
 };
 
 class Adapter_v1 : public Entity_v1
@@ -43,15 +43,15 @@ public :
         std::cout << "Adapter_v1::~Adapter_v1\n";
     }
 
-    void test(int & m_value) const override
+    void test(int & value) const override
     {
-        this->test_v1(m_value);
+        this->test_v1(value);
     }
 
 protected :
-    virtual void test_v1(int & m_value) const
+    virtual void test_v1(int & value) const
     {
-        m_value += 1;
+        value += 1;
         std::cout << "Adapter_v1::test_v1 (default) -> +1\n";
     }
 };
@@ -65,15 +65,15 @@ public :
         std::cout << "Adapter_v2::~Adapter_v2\n";
     }
 
-    void test(int & m_value) const override
+    void test(int & value) const override
     {
-        this->test_v2(m_value);
+        this->test_v2(value);
     }
 
 protected :
-    virtual void test_v2(int & m_value) const
+    virtual void test_v2(int & value) const
     {
-        m_value *= 2;
+        value *= 2;
         std::cout << "Adapter_v2::test_v2 (default) -> *2\n";
     }
 };
@@ -91,15 +91,15 @@ public :
     }
 
 protected :
-    void test_v1(int & m_value) const override
+    void test_v1(int & value) const override
     {
-        m_value += 1;
+        value += 1;
         std::cout << "Client::test_v1 -> +1 (entity_1 behavior)\n";
     }
 
-    void test_v2(int & m_value) const override
+    void test_v2(int & value) const override
     {
-        m_value *= 2;
+        value *= 2;
         std::cout << "Client::test_v2 -> *2 (entity_2 behavior)\n";
     }
 };
