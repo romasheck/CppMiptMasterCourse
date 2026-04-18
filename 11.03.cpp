@@ -12,6 +12,8 @@ exit
 // Problem: 11.03
 // Description: Brute-force traveling salesman for a complete graph with 10 vertices.
 
+
+// No the task is different
 #include <algorithm>
 #include <cstdlib>
 #include <iomanip>

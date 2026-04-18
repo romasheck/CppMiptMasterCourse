@@ -12,6 +12,8 @@ exit
 // Problem: 10.05
 // Description: Longest common substring for integer sequences using dynamic programming.
 
+// THE TASK IS DIFFERENT -- it is hash function experiments
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
