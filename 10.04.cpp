@@ -10,7 +10,9 @@ exit
 #endif
 
 // Problem: 10.04
-// Description: Conway's Game of Life on a 10x10 board stored in std::vector<std::vector<int>>.
+// Description: Fibonacci numbers by fast matrix exponentiation with Boost.UBLAS.
+
+#include <boost/numeric/ublas/matrix.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -18,80 +20,75 @@ exit
 #include <string>
 #include <vector>
 
-using Board = std::vector<std::vector<int>>;
+using matrix_t = boost::numeric::ublas::matrix<unsigned long long>;
 
-constexpr int kSize = 10;
+matrix_t multiply(const matrix_t& lhs, const matrix_t& rhs) {
+    matrix_t result(2, 2);
 
-Board make_board() {
-    return Board(kSize, std::vector<int>(kSize, 0));
-}
-
-Board make_initial_board() {
-    Board board = make_board();
-
-    // A glider in the upper-left area and a stable block in the lower-right area.
-    board[1][2] = 1;
-    board[2][3] = 1;
-    board[3][1] = 1;
-    board[3][2] = 1;
-    board[3][3] = 1;
-
-    board[6][6] = 1;
-    board[6][7] = 1;
-    board[7][6] = 1;
-    board[7][7] = 1;
-
-    return board;
-}
-
-int count_neighbors(const Board& board, int row, int col) {
-    int neighbors = 0;
-
-    for (int dr = -1; dr <= 1; ++dr) {
-        for (int dc = -1; dc <= 1; ++dc) {
-            if (dr == 0 && dc == 0) {
-                continue;
-            }
-
-            const int nr = row + dr;
-            const int nc = col + dc;
-
-            if (0 <= nr && nr < kSize && 0 <= nc && nc < kSize) {
-                neighbors += board[nr][nc];
+    for (std::size_t i = 0; i < 2; ++i) {
+        for (std::size_t j = 0; j < 2; ++j) {
+            result(i, j) = 0;
+            for (std::size_t k = 0; k < 2; ++k) {
+                result(i, j) += lhs(i, k) * rhs(k, j);
             }
         }
     }
 
-    return neighbors;
+    return result;
 }
 
-Board next_generation(const Board& board) {
-    Board next = make_board();
-
-    for (int row = 0; row < kSize; ++row) {
-        for (int col = 0; col < kSize; ++col) {
-            const int neighbors = count_neighbors(board, row, col);
-
-            if (board[row][col] == 1) {
-                next[row][col] = (neighbors == 2 || neighbors == 3) ? 1 : 0;
-            } else {
-                next[row][col] = (neighbors == 3) ? 1 : 0;
-            }
-        }
-    }
-
-    return next;
+matrix_t identity_matrix() {
+    matrix_t identity(2, 2);
+    identity(0, 0) = 1;
+    identity(0, 1) = 0;
+    identity(1, 0) = 0;
+    identity(1, 1) = 1;
+    return identity;
 }
 
-void print_board(const Board& board, int generation) {
-    std::cout << "Generation " << generation << ":\n";
-    for (const auto& row : board) {
-        for (int cell : row) {
-            std::cout << (cell ? '#' : '.');
+matrix_t fibonacci_base_matrix() {
+    matrix_t base(2, 2);
+    base(0, 0) = 1;
+    base(0, 1) = 1;
+    base(1, 0) = 1;
+    base(1, 1) = 0;
+    return base;
+}
+
+matrix_t power(matrix_t base, unsigned long long exponent) {
+    matrix_t result = identity_matrix();
+
+    while (exponent > 0) {
+        if ((exponent & 1ULL) != 0ULL) {
+            result = multiply(result, base);
         }
-        std::cout << '\n';
+        base = multiply(base, base);
+        exponent >>= 1ULL;
     }
-    std::cout << '\n';
+
+    return result;
+}
+
+unsigned long long fibonacci_matrix(unsigned long long n) {
+    if (n == 0) {
+        return 0;
+    }
+
+    const matrix_t matrix = power(fibonacci_base_matrix(), n - 1);
+    return matrix(0, 0);
+}
+
+unsigned long long fibonacci_linear(unsigned long long n) {
+    unsigned long long current = 0;
+    unsigned long long next = 1;
+
+    for (unsigned long long i = 0; i < n; ++i) {
+        const unsigned long long updated = current + next;
+        current = next;
+        next = updated;
+    }
+
+    return current;
 }
 
 namespace tests {
@@ -117,59 +114,46 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-void test_block_is_stable(Logger& log) {
-    Board board = make_board();
-    board[4][4] = 1;
-    board[4][5] = 1;
-    board[5][4] = 1;
-    board[5][5] = 1;
+void test_known_values(Logger& log) {
+    const std::vector<unsigned long long> expected{
+        0ULL, 1ULL, 1ULL, 2ULL, 3ULL, 5ULL, 8ULL, 13ULL, 21ULL, 34ULL, 55ULL,
+    };
 
-    const Board next = next_generation(board);
-    require(next == board, "2x2 block should be stable");
-    log.require(true, "stable block remains unchanged");
-}
-
-void test_blinker_oscillates(Logger& log) {
-    Board board = make_board();
-    board[4][3] = 1;
-    board[4][4] = 1;
-    board[4][5] = 1;
-
-    Board expected = make_board();
-    expected[3][4] = 1;
-    expected[4][4] = 1;
-    expected[5][4] = 1;
-
-    require(next_generation(board) == expected, "blinker should rotate");
-    require(next_generation(expected) == board, "blinker should return after two steps");
-    log.require(true, "blinker oscillates");
-}
-
-void test_glider_stays_alive(Logger& log) {
-    Board board = make_initial_board();
-
-    for (int i = 0; i < 4; ++i) {
-        board = next_generation(board);
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        require(fibonacci_matrix(i) == expected[i], "known Fibonacci value mismatch");
     }
 
-    int alive = 0;
-    for (const auto& row : board) {
-        for (int cell : row) {
-            alive += cell;
-        }
+    log.require(true, "known Fibonacci values are correct");
+}
+
+void test_matches_linear_algorithm(Logger& log) {
+    for (unsigned long long n = 0; n <= 50; ++n) {
+        require(fibonacci_matrix(n) == fibonacci_linear(n), "matrix and linear algorithms must match");
     }
 
-    require(alive >= 4, "expected surviving cells after several steps");
-    log.require(true, "initial pattern evolves non-trivially");
+    log.require(true, "matrix exponentiation matches linear algorithm");
+}
+
+void test_power_identity(Logger& log) {
+    const matrix_t result = power(fibonacci_base_matrix(), 0);
+    require(result(0, 0) == 1 && result(0, 1) == 0 && result(1, 0) == 0 && result(1, 1) == 1,
+            "zero power should give identity");
+    log.require(true, "matrix power handles zero exponent");
+}
+
+void test_large_safe_value(Logger& log) {
+    require(fibonacci_matrix(93) == 12200160415121876738ULL, "F(93) should fit in unsigned long long");
+    log.require(true, "largest commonly safe Fibonacci value is correct");
 }
 
 void run_all() {
     Logger log;
 
     try {
-        test_block_is_stable(log);
-        test_blinker_oscillates(log);
-        test_glider_stays_alive(log);
+        test_known_values(log);
+        test_matches_linear_algorithm(log);
+        test_power_identity(log);
+        test_large_safe_value(log);
     } catch (const std::exception& ex) {
         log.require(false, ex.what());
     }
@@ -185,14 +169,9 @@ void run_all() {
 int main() {
     tests::run_all();
 
-    Board board = make_initial_board();
-    constexpr int generations = 6;
-
-    std::cout << '\n';
-    for (int generation = 0; generation < generations; ++generation) {
-        print_board(board, generation);
-        board = next_generation(board);
-    }
+    std::cout << "\nF(50) = " << fibonacci_matrix(50) << '\n';
+    std::cout << "Fast matrix exponentiation performs O(log N) matrix multiplications; "
+              << "the direct iterative method is O(N), while plain recursion is exponential.\n";
 
     return 0;
 }

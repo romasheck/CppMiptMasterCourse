@@ -10,11 +10,13 @@ exit
 #endif
 
 // Problem: 10.01
-// Description: Track std::vector capacity growth and estimate the growth factor.
+// Description: Track std::vector capacity growth and std::deque memory pages.
 
+#include <cstdint>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -69,6 +71,44 @@ double estimate_growth_factor(const std::vector<CapacityEvent>& events) {
 
 bool almost_equal(double lhs, double rhs, double epsilon = 1e-9) {
     return std::abs(lhs - rhs) < epsilon;
+}
+
+struct PageEvent {
+    std::size_t index = 0;
+    std::uintptr_t previous_address = 0;
+    std::uintptr_t current_address = 0;
+
+    std::ptrdiff_t address_gap() const {
+        return static_cast<std::ptrdiff_t>(current_address) -
+               static_cast<std::ptrdiff_t>(previous_address);
+    }
+};
+
+template <typename T>
+std::vector<PageEvent> track_deque_page_changes(std::size_t push_count) {
+    std::deque<T> data;
+
+    for (std::size_t i = 0; i < push_count; ++i) {
+        data.push_back(static_cast<T>(i));
+    }
+
+    std::vector<PageEvent> events;
+    for (std::size_t i = 1; i < data.size(); ++i) {
+        const auto previous = reinterpret_cast<std::uintptr_t>(&data[i - 1]);
+        const auto current = reinterpret_cast<std::uintptr_t>(&data[i]);
+
+        if (current - previous != sizeof(T)) {
+            events.push_back({i, previous, current});
+        }
+    }
+
+    return events;
+}
+
+template <typename T>
+std::size_t estimate_deque_page_elements(std::size_t push_count) {
+    const auto events = track_deque_page_changes<T>(push_count);
+    return events.empty() ? push_count : events.front().index;
 }
 
 namespace tests {
@@ -148,6 +188,24 @@ void test_other_type_has_same_pattern(Logger& log) {
     log.require(true, "capacity growth pattern matches for another type");
 }
 
+void test_deque_page_changes_are_recorded(Logger& log) {
+    const auto events = track_deque_page_changes<int>(512);
+
+    require(!events.empty(), "expected at least one deque page boundary");
+    require(events.front().index > 0, "first page should contain elements");
+    require(events.front().address_gap() != static_cast<std::ptrdiff_t>(sizeof(int)),
+            "page boundary should break contiguous addresses");
+    log.require(true, "deque page boundaries are tracked by element addresses");
+}
+
+void test_deque_page_size_for_int(Logger& log) {
+    const std::size_t page_elements = estimate_deque_page_elements<int>(512);
+
+    require(page_elements == 128, "libstdc++ deque<int> page should contain 128 elements");
+    require(page_elements * sizeof(int) == 512, "libstdc++ deque<int> page should occupy 512 bytes");
+    log.require(true, "observed deque<int> page size is 512 bytes");
+}
+
 void run_all() {
     Logger log;
 
@@ -157,6 +215,8 @@ void run_all() {
         test_growth_factor_is_consistent(log);
         test_observed_factor_for_int(log);
         test_other_type_has_same_pattern(log);
+        test_deque_page_changes_are_recorded(log);
+        test_deque_page_size_for_int(log);
     } catch (const std::exception& ex) {
         log.require(false, ex.what());
     }
@@ -189,5 +249,17 @@ int main() {
     }
 
     std::cout << "Estimated growth factor: " << std::fixed << std::setprecision(2) << factor << '\n';
+
+    const auto page_events = track_deque_page_changes<int>(512);
+    const std::size_t page_elements = estimate_deque_page_elements<int>(512);
+
+    std::cout << "\nstd::deque<int> page boundaries:\n";
+    std::cout << " index | previous address | current address | gap\n";
+    for (const PageEvent& event : page_events) {
+        std::cout << std::setw(6) << event.index << " | 0x" << std::hex << event.previous_address << " | 0x"
+                  << event.current_address << std::dec << " | " << event.address_gap() << '\n';
+    }
+    std::cout << "Estimated page size: " << page_elements << " int elements, "
+              << page_elements * sizeof(int) << " bytes\n";
     return 0;
 }

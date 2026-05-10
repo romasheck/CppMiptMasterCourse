@@ -9,8 +9,8 @@ rm "${SCRIPT_NAME}.out"
 exit
 #endif
 
-// Problem: 10.06
-// Description: Fibonacci numbers via matrix exponentiation with Boost.Ublas matrices.
+// Archived old solution: the current problems.pdf has no 10.06 task.
+// Current Fibonacci matrix exponentiation solution: 10.04.cpp.
 
 #include <cstdlib>
 #include <iostream>

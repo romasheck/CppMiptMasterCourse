@@ -10,118 +10,109 @@ exit
 #endif
 
 // Problem: 10.03
-// Description: Two stack implementations that track the current minimum instead of the maximum.
+// Description: Conway's Game of Life on a 10x10 board stored in Boost.MultiArray.
 
-#include <algorithm>
+#include <boost/multi_array.hpp>
+
 #include <cstdlib>
 #include <iostream>
-#include <stack>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
-namespace pair_stack {
+constexpr int kSize = 10;
+using Board = boost::multi_array<int, 2>;
 
-template <typename T>
-class Stack {
-public:
-    void push(T value) {
-        const T current_min = data_.empty() ? value : std::min(value, data_.top().second);
-        data_.emplace(value, current_min);
-    }
+Board make_board() {
+    return Board(boost::extents[kSize][kSize]);
+}
 
-    T top() const {
-        ensure_not_empty();
-        return data_.top().first;
-    }
+Board make_initial_board() {
+    Board board = make_board();
 
-    void pop() {
-        ensure_not_empty();
-        data_.pop();
-    }
+    board[1][2] = 1;
+    board[2][3] = 1;
+    board[3][1] = 1;
+    board[3][2] = 1;
+    board[3][3] = 1;
 
-    T min() const {
-        ensure_not_empty();
-        return data_.top().second;
-    }
+    board[6][6] = 1;
+    board[6][7] = 1;
+    board[7][6] = 1;
+    board[7][7] = 1;
 
-    bool empty() const {
-        return data_.empty();
-    }
+    return board;
+}
 
-private:
-    void ensure_not_empty() const {
-        if (data_.empty()) {
-            throw std::runtime_error("stack is empty");
+int count_neighbors(const Board& board, int row, int col) {
+    int neighbors = 0;
+
+    for (int dr = -1; dr <= 1; ++dr) {
+        for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) {
+                continue;
+            }
+
+            const int nr = row + dr;
+            const int nc = col + dc;
+
+            if (0 <= nr && nr < kSize && 0 <= nc && nc < kSize) {
+                neighbors += board[nr][nc];
+            }
         }
     }
 
-    std::stack<std::pair<T, T>> data_;
-};
+    return neighbors;
+}
 
-}  // namespace pair_stack
+Board next_generation(const Board& board) {
+    Board next = make_board();
 
-namespace encoded_stack {
+    for (int row = 0; row < kSize; ++row) {
+        for (int col = 0; col < kSize; ++col) {
+            const int neighbors = count_neighbors(board, row, col);
 
-template <typename T>
-class Stack {
-public:
-    void push(T value) {
-        if (data_.empty()) {
-            data_.push(value);
-            min_ = value;
-            return;
-        }
-
-        if (value < min_) {
-            data_.push(2 * value - min_);
-            min_ = value;
-        } else {
-            data_.push(value);
+            if (board[row][col] == 1) {
+                next[row][col] = (neighbors == 2 || neighbors == 3) ? 1 : 0;
+            } else {
+                next[row][col] = (neighbors == 3) ? 1 : 0;
+            }
         }
     }
 
-    T top() const {
-        ensure_not_empty();
-        return data_.top() < min_ ? min_ : data_.top();
-    }
+    return next;
+}
 
-    void pop() {
-        ensure_not_empty();
-
-        const T encoded = data_.top();
-        data_.pop();
-
-        if (data_.empty()) {
-            return;
-        }
-
-        if (encoded < min_) {
-            min_ = 2 * min_ - encoded;
+bool equal_boards(const Board& lhs, const Board& rhs) {
+    for (int row = 0; row < kSize; ++row) {
+        for (int col = 0; col < kSize; ++col) {
+            if (lhs[row][col] != rhs[row][col]) {
+                return false;
+            }
         }
     }
+    return true;
+}
 
-    T min() const {
-        ensure_not_empty();
-        return min_;
-    }
-
-    bool empty() const {
-        return data_.empty();
-    }
-
-private:
-    void ensure_not_empty() const {
-        if (data_.empty()) {
-            throw std::runtime_error("stack is empty");
+int count_alive(const Board& board) {
+    int alive = 0;
+    for (int row = 0; row < kSize; ++row) {
+        for (int col = 0; col < kSize; ++col) {
+            alive += board[row][col];
         }
     }
+    return alive;
+}
 
-    std::stack<T> data_;
-    T min_{};
-};
-
-}  // namespace encoded_stack
+void print_board(const Board& board, int generation) {
+    std::cout << "Generation " << generation << ":\n";
+    for (int row = 0; row < kSize; ++row) {
+        for (int col = 0; col < kSize; ++col) {
+            std::cout << (board[row][col] ? '#' : '.');
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n';
+}
 
 namespace tests {
 
@@ -146,100 +137,51 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-template <typename Stack>
-void verify_basic_sequence(Stack& stack) {
-    stack.push(3);
-    require(stack.top() == 3 && stack.min() == 3, "after push 3");
+void test_block_is_stable(Logger& log) {
+    Board board = make_board();
+    board[4][4] = 1;
+    board[4][5] = 1;
+    board[5][4] = 1;
+    board[5][5] = 1;
 
-    stack.push(1);
-    require(stack.top() == 1 && stack.min() == 1, "after push 1");
-
-    stack.push(2);
-    require(stack.top() == 2 && stack.min() == 1, "after push 2");
-
-    stack.push(0);
-    require(stack.top() == 0 && stack.min() == 0, "after push 0");
-
-    stack.pop();
-    require(stack.top() == 2 && stack.min() == 1, "after pop 0");
-
-    stack.pop();
-    require(stack.top() == 1 && stack.min() == 1, "after pop 2");
-
-    stack.pop();
-    require(stack.top() == 3 && stack.min() == 3, "after pop 1");
-
-    stack.pop();
-    require(stack.empty(), "stack should be empty");
+    require(equal_boards(next_generation(board), board), "2x2 block should be stable");
+    log.require(true, "stable block remains unchanged");
 }
 
-void test_pair_stack(Logger& log) {
-    pair_stack::Stack<int> stack;
-    verify_basic_sequence(stack);
-    log.require(true, "pair-based stack tracks minimum");
+void test_blinker_oscillates(Logger& log) {
+    Board board = make_board();
+    board[4][3] = 1;
+    board[4][4] = 1;
+    board[4][5] = 1;
+
+    Board expected = make_board();
+    expected[3][4] = 1;
+    expected[4][4] = 1;
+    expected[5][4] = 1;
+
+    require(equal_boards(next_generation(board), expected), "blinker should rotate");
+    require(equal_boards(next_generation(expected), board), "blinker should return after two steps");
+    log.require(true, "blinker oscillates");
 }
 
-void test_encoded_stack(Logger& log) {
-    encoded_stack::Stack<int> stack;
-    verify_basic_sequence(stack);
-    log.require(true, "encoded stack tracks minimum");
-}
+void test_glider_stays_alive(Logger& log) {
+    Board board = make_initial_board();
 
-template <typename Stack>
-void verify_negative_values(Stack& stack) {
-    stack.push(-2);
-    stack.push(4);
-    stack.push(-5);
-    stack.push(3);
-
-    require(stack.min() == -5, "minimum with negative values");
-    stack.pop();
-    require(stack.min() == -5, "minimum should stay after popping larger value");
-    stack.pop();
-    require(stack.min() == -2, "minimum should restore after popping smallest value");
-}
-
-void test_negative_values(Logger& log) {
-    {
-        pair_stack::Stack<int> stack;
-        verify_negative_values(stack);
-    }
-    {
-        encoded_stack::Stack<int> stack;
-        verify_negative_values(stack);
+    for (int i = 0; i < 4; ++i) {
+        board = next_generation(board);
     }
 
-    log.require(true, "both stacks handle negative values");
-}
-
-template <typename Stack>
-void verify_empty_guard() {
-    Stack stack;
-    bool caught = false;
-
-    try {
-        static_cast<void>(stack.min());
-    } catch (const std::runtime_error&) {
-        caught = true;
-    }
-
-    require(caught, "min() should reject empty stack");
-}
-
-void test_empty_stack(Logger& log) {
-    verify_empty_guard<pair_stack::Stack<int>>();
-    verify_empty_guard<encoded_stack::Stack<int>>();
-    log.require(true, "empty stack access is guarded");
+    require(count_alive(board) >= 4, "expected surviving cells after several steps");
+    log.require(true, "initial pattern evolves non-trivially");
 }
 
 void run_all() {
     Logger log;
 
     try {
-        test_pair_stack(log);
-        test_encoded_stack(log);
-        test_negative_values(log);
-        test_empty_stack(log);
+        test_block_is_stable(log);
+        test_blinker_oscillates(log);
+        test_glider_stays_alive(log);
     } catch (const std::exception& ex) {
         log.require(false, ex.what());
     }
@@ -254,5 +196,15 @@ void run_all() {
 
 int main() {
     tests::run_all();
+
+    Board board = make_initial_board();
+    constexpr int generations = 6;
+
+    std::cout << '\n';
+    for (int generation = 0; generation < generations; ++generation) {
+        print_board(board, generation);
+        board = next_generation(board);
+    }
+
     return 0;
 }

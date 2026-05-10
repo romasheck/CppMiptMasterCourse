@@ -10,107 +10,112 @@ exit
 #endif
 
 // Problem: 11.03
-// Description: Brute-force traveling salesman for a complete graph with 10 vertices.
+// Description: Hybrid sort on random-access iterators with a user comparator.
 
-
-// No the task is different
 #include <algorithm>
+#include <concepts>
+#include <cstddef>
 #include <cstdlib>
-#include <iomanip>
+#include <deque>
+#include <functional>
 #include <iostream>
-#include <limits>
-#include <numeric>
+#include <iterator>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
-using Matrix = std::vector<std::vector<int>>;
+namespace hybrid_sort {
 
-struct TourResult {
-    std::vector<int> route;
-    int cost = std::numeric_limits<int>::max();
-};
+constexpr std::ptrdiff_t kInsertionThreshold = 16;
 
-Matrix make_random_complete_graph(int vertices, int min_weight, int max_weight, unsigned seed) {
-    Matrix matrix(vertices, std::vector<int>(vertices, 0));
-    std::mt19937 engine(seed);
-    std::uniform_int_distribution<int> distribution(min_weight, max_weight);
-
-    for (int i = 0; i < vertices; ++i) {
-        for (int j = i + 1; j < vertices; ++j) {
-            const int weight = distribution(engine);
-            matrix[i][j] = weight;
-            matrix[j][i] = weight;
-        }
+template <std::random_access_iterator Iterator, typename Compare>
+void insertion_sort(Iterator first, Iterator last, Compare compare) {
+    if (first == last) {
+        return;
     }
 
-    return matrix;
-}
+    for (Iterator current = std::next(first); current != last; ++current) {
+        Iterator position = current;
 
-int route_cost(const Matrix& matrix, const std::vector<int>& order) {
-    if (order.empty()) {
-        return 0;
-    }
+        while (position != first) {
+            Iterator previous = std::prev(position);
+            if (!compare(*position, *previous)) {
+                break;
+            }
 
-    int cost = 0;
-    for (std::size_t i = 1; i < order.size(); ++i) {
-        cost += matrix[order[i - 1]][order[i]];
-    }
-    cost += matrix[order.back()][order.front()];
-    return cost;
-}
-
-TourResult solve_tsp(const Matrix& matrix) {
-    const int vertices = static_cast<int>(matrix.size());
-    std::vector<int> permutation(vertices - 1);
-    std::iota(permutation.begin(), permutation.end(), 1);
-
-    TourResult best;
-
-    do {
-        std::vector<int> route;
-        route.reserve(vertices + 1);
-        route.push_back(0);
-        route.insert(route.end(), permutation.begin(), permutation.end());
-        route.push_back(0);
-
-        int cost = 0;
-        for (std::size_t i = 1; i < route.size(); ++i) {
-            cost += matrix[route[i - 1]][route[i]];
+            std::iter_swap(previous, position);
+            position = previous;
         }
-
-        if (cost < best.cost) {
-            best.cost = cost;
-            best.route = route;
-        }
-    } while (std::next_permutation(permutation.begin(), permutation.end()));
-
-    return best;
-}
-
-void print_matrix(const Matrix& matrix) {
-    std::cout << "Incidence matrix:\n";
-    for (const auto& row : matrix) {
-        for (int value : row) {
-            std::cout << std::setw(3) << value;
-        }
-        std::cout << '\n';
     }
 }
 
-void print_route(const std::vector<int>& route) {
-    std::cout << "Optimal route: ";
-    for (std::size_t i = 0; i < route.size(); ++i) {
-        if (i != 0) {
-            std::cout << " -> ";
-        }
-        std::cout << route[i];
+template <std::random_access_iterator Iterator, typename Compare>
+Iterator partition_hoare(Iterator first, Iterator last, Compare compare) {
+    Iterator middle = first;
+    std::advance(middle, std::distance(first, last) / 2);
+    Iterator tail = std::prev(last);
+
+    if (compare(*middle, *first)) {
+        std::iter_swap(middle, first);
     }
-    std::cout << '\n';
+    if (compare(*tail, *first)) {
+        std::iter_swap(tail, first);
+    }
+    if (compare(*tail, *middle)) {
+        std::iter_swap(tail, middle);
+    }
+
+    const auto pivot = *middle;
+    Iterator left = first;
+    Iterator right = tail;
+
+    while (true) {
+        while (compare(*left, pivot)) {
+            ++left;
+        }
+        while (compare(pivot, *right)) {
+            --right;
+        }
+
+        if (left >= right) {
+            return std::next(right);
+        }
+
+        std::iter_swap(left, right);
+        ++left;
+        --right;
+    }
 }
+
+template <std::random_access_iterator Iterator, typename Compare>
+void sort_impl(Iterator first, Iterator last, Compare compare) {
+    const std::ptrdiff_t size = std::distance(first, last);
+    if (size <= 1) {
+        return;
+    }
+
+    if (size <= kInsertionThreshold) {
+        insertion_sort(first, last, compare);
+        return;
+    }
+
+    const Iterator split = partition_hoare(first, last, compare);
+    sort_impl(first, split, compare);
+    sort_impl(split, last, compare);
+}
+
+template <std::random_access_iterator Iterator, typename Compare = std::less<>>
+void sort(Iterator first, Iterator last, Compare compare = Compare{}) {
+    sort_impl(first, last, compare);
+}
+
+}  // namespace hybrid_sort
 
 namespace tests {
+
+bool greater_int(int lhs, int rhs) {
+    return lhs > rhs;
+}
 
 struct Logger {
     int passed = 0;
@@ -127,61 +132,63 @@ struct Logger {
     }
 };
 
-void require(bool condition, const std::string& message) {
-    if (!condition) {
-        throw std::runtime_error(message);
-    }
+void test_free_function_comparator(Logger& log) {
+    std::vector<int> data{5, 1, 4, 1, 3, 2};
+    hybrid_sort::sort(data.begin(), data.end(), greater_int);
+    log.require(std::ranges::is_sorted(data, greater_int), "free function comparator");
 }
 
-void test_symmetric_matrix(Logger& log) {
-    const Matrix matrix = make_random_complete_graph(10, 1, 10, 123456u);
+void test_standard_function_object(Logger& log) {
+    std::deque<int> data{8, 3, 7, 2, 6, 1, 5, 4};
+    hybrid_sort::sort(data.begin(), data.end(), std::less<>{});
+    log.require(std::ranges::is_sorted(data, std::less<>{}), "std::less comparator");
+}
 
-    for (int i = 0; i < 10; ++i) {
-        require(matrix[i][i] == 0, "diagonal should be zero");
-        for (int j = 0; j < 10; ++j) {
-            require(matrix[i][j] == matrix[j][i], "matrix should be symmetric");
+void test_lambda_comparator(Logger& log) {
+    std::vector<std::string> data{"bbb", "a", "cc", "dddd", "ee"};
+    auto shorter = [](const std::string& lhs, const std::string& rhs) {
+        if (lhs.size() != rhs.size()) {
+            return lhs.size() < rhs.size();
         }
+        return lhs < rhs;
+    };
+
+    hybrid_sort::sort(data.begin(), data.end(), shorter);
+    log.require(std::ranges::is_sorted(data, shorter), "lambda comparator");
+}
+
+void test_default_comparator(Logger& log) {
+    std::mt19937 engine(123456u);
+    std::uniform_int_distribution<int> distribution(-100, 100);
+    std::vector<int> data(1000);
+
+    for (int& value : data) {
+        value = distribution(engine);
     }
 
-    log.require(true, "random graph is symmetric");
+    hybrid_sort::sort(data.begin(), data.end());
+    log.require(std::ranges::is_sorted(data), "default comparator");
 }
 
-void test_known_small_graph(Logger& log) {
-    const Matrix matrix{
-        {0, 10, 15, 20},
-        {10, 0, 35, 25},
-        {15, 35, 0, 30},
-        {20, 25, 30, 0},
-    };
+void test_subrange(Logger& log) {
+    std::vector<int> data{100, 5, 4, 3, 2, 1, 200};
+    hybrid_sort::sort(std::next(data.begin()), std::prev(data.end()), std::greater<>{});
 
-    const TourResult result = solve_tsp(matrix);
-    require(result.cost == 80, "expected optimal cost 80");
-    require(result.route.front() == 0 && result.route.back() == 0, "route should return to start");
-    log.require(true, "solver finds optimal route on a known graph");
-}
+    const bool untouched_edges = data.front() == 100 && data.back() == 200;
+    const bool sorted_middle =
+        std::ranges::is_sorted(std::next(data.begin()), std::prev(data.end()), std::greater<>{});
 
-void test_route_cost(Logger& log) {
-    const Matrix matrix{
-        {0, 2, 9},
-        {2, 0, 3},
-        {9, 3, 0},
-    };
-    const std::vector<int> route{0, 1, 2};
-
-    require(route_cost(matrix, route) == 14, "route cost should include return to start");
-    log.require(true, "route cost counts closing edge");
+    log.require(untouched_edges && sorted_middle, "half-open subrange with comparator");
 }
 
 void run_all() {
     Logger log;
 
-    try {
-        test_symmetric_matrix(log);
-        test_known_small_graph(log);
-        test_route_cost(log);
-    } catch (const std::exception& ex) {
-        log.require(false, ex.what());
-    }
+    test_free_function_comparator(log);
+    test_standard_function_object(log);
+    test_lambda_comparator(log);
+    test_default_comparator(log);
+    test_subrange(log);
 
     std::cout << '\n' << log.passed << " passed, " << log.failed << " failed\n";
     if (log.failed != 0) {
@@ -193,15 +200,5 @@ void run_all() {
 
 int main() {
     tests::run_all();
-
-    constexpr int vertices = 10;
-    const Matrix matrix = make_random_complete_graph(vertices, 1, 10, 20250414u);
-    const TourResult result = solve_tsp(matrix);
-
-    std::cout << '\n';
-    print_matrix(matrix);
-    print_route(result.route);
-    std::cout << "Total cost: " << result.cost << '\n';
-
     return 0;
 }
